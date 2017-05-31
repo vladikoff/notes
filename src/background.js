@@ -1,3 +1,5 @@
+
+
 const REDIRECT_URL = browser.identity.getRedirectURL();
 const CLIENT_ID = 'c6d74070a481bc10';
 const SCOPES = ['profile keys'];
@@ -13,32 +15,9 @@ const KEYS_URL = `https://oauth-oauth-keys-prototype.dev.lcip.org/v1/keys`;
 // TODO: move to server
 const CLIENT_SECRET = 'd914ea58d579ec907a1a40b19fb3f3a631461fe00e494521d41c0496f49d288f';
 
-function createKeyPair () {
-  return window.crypto.subtle.generateKey(
-    {
-      name: "RSA-OAEP",
-      modulusLength: 4096,
-      publicExponent: new Uint8Array([0x01, 0x00, 0x01]),
-      hash: {name: "SHA-256"},
-    },
-    true, // extractable key
-    ["encrypt", "decrypt"]
-  ).then(function(keys) {
-    let exportPrivateKey;
-    return window.crypto.subtle.exportKey("jwk", keys.privateKey)
-      .then(function (pk) {
-        exportPrivateKey = pk;
-        return window.crypto.subtle.exportKey("jwk", keys.publicKey);
-      })
-      .then(function (exportPublicKey) {
-        return {
-          keys: keys,
-          exportPrivateKey: exportPrivateKey,
-          exportPublicKey: exportPublicKey
-        };
-      });
-  });
-}
+const fxaKeyUtils = new FxaCryptoRelier.KeyUtils();
+
+console.log(fxaKeyUtils);
 
 function hexStringToByte(str) {
   if (!str) {
@@ -61,7 +40,7 @@ function extractAccessToken(redirectUri) {
   return params.get('code');
 }
 
-function getBearerToken(code) {
+function getBearerTokenAndJwe(code) {
   var myHeaders = new Headers();
   myHeaders.append('Content-Type', 'application/json');
 
@@ -100,33 +79,24 @@ function getDerivedKeys(bearerToken) {
     });
 }
 
-function handleMaybeInt(maybeString) {
-  const maybeInt = parseInt(maybeString, 10);
-  if (Number.isNaN(maybeInt)) {
-    return null;
-  }
-  return maybeInt;
-}
-
 function handleAuthentication() {
-  // chrome.tabs.create({ 'url': authenticateURL }, function () {
-  //   chrome.tabs.onUpdated.addListener(tabCallback);
-  // });
-  let privateKey;
+  let appPrivateKey;
   let bearerToken;
-  return createKeyPair()
-    .then(function (keyMaterial) {
-      const publicKey = JSON.stringify(keyMaterial.exportPublicKey);
-      privateKey = keyMaterial.exportPrivateKey;
+
+  return fxaKeyUtils.createApplicationKeyPair()
+    .then((keyObject) => {
+      console.log('app keys', keyObject);
+      appPrivateKey = keyObject.rawPrivateKey;
+
       return browser.identity.launchWebAuthFlow({
         interactive: true,
-        url: `${AUTH_URL}&jwk=${publicKey}`
+        url: `${AUTH_URL}&keys_jwk=${keyObject.base64JwkPublicKey}`
       });
-    }).then(function (redirectURL) {
+    }).then((redirectURL) => {
       const code = extractAccessToken(redirectURL);
 
-      return getBearerToken(code);
-    }).then(function (bearer) {
+      return getBearerTokenAndJwe(code);
+    }).then((bearer) => {
       console.log('bearer', bearer);
 
       return getDerivedKeys(bearer).then(function (keys) {

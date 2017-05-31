@@ -33,6 +33,7 @@
 
   "background": {
     "scripts": [
+      "js/main.min.js",
       "background.js"
     ]
   },
